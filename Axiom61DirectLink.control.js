@@ -138,6 +138,30 @@ let isShiftPressed = false;
 let currentEncoderMode = 'pan';  // 'pan', 'device', 'send'
 let sceneBank = null;
 
+// Device parameter names for display
+const deviceParamNames = [];
+for (let i = 0; i < WINDOW_SIZE; i++) {
+    deviceParamNames[i] = '';
+}
+
+// Pan parameter names for display
+const panParamNames = [];
+for (let i = 0; i < WINDOW_SIZE; i++) {
+    panParamNames[i] = 'Pan';
+}
+
+// Send parameter names for display
+const sendParamNames = [];
+for (let i = 0; i < WINDOW_SIZE; i++) {
+    sendParamNames[i] = 'Send';
+}
+let activeEncoderIndex = 0;
+
+// Flag to block volume sync while using encoder
+let encoderTouchTime = 0;
+let encoderRestoreTask = null;
+let encoderTouchCount = 0;
+
 // Button mode settings
 let buttonModeSetting = null;
 let buttonMode = 'mute';  // 'mute', 'solo', 'record'
@@ -408,41 +432,49 @@ function handleDirectLinkPad(note, velocity) {
                 // Shift + Pad 1: PAN mode
                 currentEncoderMode = 'pan';
                 displayText('PAN', 0);
+                scheduleDisplayRestore();
                 break;
             case 1:
                 // Shift + Pad 2: DEVICE mode
                 currentEncoderMode = 'device';
                 displayText('DEVICE', 0);
+                scheduleDisplayRestore();
                 break;
             case 2:
                 // Shift + Pad 3: SEND mode
                 currentEncoderMode = 'send';
                 displayText('SEND', 0);
+                scheduleDisplayRestore();
                 break;
             case 3:
                 // Shift + Pad 4: Toggle Metronome
                 transport.isMetronomeEnabled().toggle();
                 displayText('METRONOME', 0);
+                scheduleDisplayRestore();
                 break;
             case 4:
                 // Shift + Pad 5: Undo
                 application.undo();
                 displayText('UNDO', 0);
+                scheduleDisplayRestore();
                 break;
             case 5:
                 // Shift + Pad 6: Redo
                 application.redo();
                 displayText('REDO', 0);
+                scheduleDisplayRestore();
                 break;
             case 6:
                 // Shift + Pad 7: Tap Tempo
                 transport.tapTempo();
                 displayText('TAP TEMPO', 0);
+                scheduleDisplayRestore();
                 break;
             case 7:
                 // Shift + Pad 8: Toggle Loop
                 transport.isArrangerLoopEnabled().toggle();
                 displayText('LOOP', 0);
+                scheduleDisplayRestore();
                 break;
         }
     } else {
@@ -492,6 +524,31 @@ function handleFader(trackIndex, value) {
     const track = trackBank.getItemAt(trackIndex);
     if (track) {
         track.volume().set(value, 128);
+        
+        // Update LED indicator immediately (don't wait for flush)
+        setIndicator(CC.FADER_1 + trackIndex, value);
+        
+        // Cancel previous restore task
+        if (encoderRestoreTask) {
+            encoderRestoreTask.cancel();
+        }
+        
+        // Block volume sync for 3 seconds to show track name on DISPLAY
+        encoderTouchTime = Date.now() + 3000;
+        encoderTouchCount++;
+        const touchCount = encoderTouchCount;
+        
+        // Get track name
+        const name = track.name().get();
+        const displayName = name ? name.substring(0, 12) : 'Track' + (trackIndex + 1);
+        displayText(displayName + ' ' + Math.round(value), 0);
+        
+        encoderRestoreTask = host.scheduleTask(function() {
+            if (encoderTouchCount === touchCount) {
+                encoderTouchTime = 0;  // Unblock flush
+                restoreActiveTrackDisplay();
+            }
+        }, 3000);
     }
 }
 
@@ -533,9 +590,103 @@ function handleEncoder(encoderIndex, value) {
 }
 
 /**
+ * Show track name and volume on display, schedule restore after 3 seconds
+ * Blocks volume sync for 3 seconds
+ */
+function showTrackVolume(trackIndex) {
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    encoderTouchCount++;
+    const touchCount = encoderTouchCount;
+    
+    // Get track name and volume
+    const track = trackBank.getItemAt(trackIndex);
+    if (track) {
+        const name = track.name().get();
+        const volume = trackStates[trackIndex].volume;
+        
+        // Format: "TrackName 127" (name + volume value)
+        let displayStr = name ? name.substring(0, 12) : 'Track' + (trackIndex + 1);
+        displayStr = displayStr + ' ' + Math.round(volume);
+        
+        displayText(displayStr, 0);
+        
+        // Schedule restore after 3 seconds
+        encoderRestoreTask = host.scheduleTask(function() {
+            if (encoderTouchCount === touchCount) {
+                encoderTouchTime = 0;  // Unblock flush
+                restoreActiveTrackDisplay();
+            }
+        }, 3000);
+    }
+}
+
+/**
+ * Restore display to active track name and volume
+ */
+function restoreActiveTrackDisplay() {
+    const name = cursorTrack.name().get();
+    if (name && name.length > 0) {
+        displayText(name.substring(0, 16), 0);
+    }
+}
+
+/**
+ * Schedule display restore after 3 seconds (for mode/button changes)
+ * Blocks volume sync for 3 seconds
+ */
+function scheduleDisplayRestore() {
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    encoderTouchCount++;
+    const touchCount = encoderTouchCount;
+    
+    // Schedule restore after 3 seconds
+    encoderRestoreTask = host.scheduleTask(function() {
+        if (encoderTouchCount === touchCount) {
+            encoderTouchTime = 0;  // Unblock flush
+            restoreActiveTrackDisplay();
+        }
+    }, 3000);
+}
+
+/**
  * Handle pan encoder
  */
 function handlePanEncoder(encoderIndex, increment) {
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    encoderTouchCount++;
+    
+    const touchCount = encoderTouchCount;  // Capture current count
+    
+    // Display pan parameter name
+    const paramName = panParamNames[encoderIndex] || 'Pan';
+    displayText(paramName, 0);
+    
+    // Schedule restore after 3 seconds
+    encoderRestoreTask = host.scheduleTask(function() {
+        if (encoderTouchCount === touchCount) {
+            encoderTouchTime = 0;  // Unblock flush
+            restoreActiveTrackDisplay();
+        }
+    }, 3000);
+    
     const track = trackBank.getItemAt(encoderIndex);
     if (track) {
         // Pan range is -1 to 1, so total range is 2
@@ -547,11 +698,34 @@ function handlePanEncoder(encoderIndex, increment) {
  * Handle device parameter encoder
  */
 function handleDeviceEncoder(encoderIndex, increment) {
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    activeEncoderIndex = encoderIndex;
+    encoderTouchCount++;
+    
+    const touchCount = encoderTouchCount;  // Capture current count
+    
+    // Schedule restore after 3 seconds
+    encoderRestoreTask = host.scheduleTask(function() {
+        if (encoderTouchCount === touchCount) {
+            encoderTouchTime = 0;  // Unblock flush
+            restoreActiveTrackDisplay();
+        }
+    }, 3000);
+    
     if (remoteControls) {
         const param = remoteControls.getParameter(encoderIndex);
         if (param) {
-            // Parameter range is 0 to 1, so total range is 1
-            // Use set() with computed value instead of inc()
+            // Display parameter name (value will be synced by observer)
+            const paramName = deviceParamNames[encoderIndex] || 'PARAM';
+            displayText(paramName, 0);
+            
+            // Change parameter
             param.inc(increment, 2.0);
         }
     }
@@ -561,6 +735,30 @@ function handleDeviceEncoder(encoderIndex, increment) {
  * Handle send encoder
  */
 function handleSendEncoder(encoderIndex, increment) {
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    activeEncoderIndex = encoderIndex;
+    encoderTouchCount++;
+    
+    const touchCount = encoderTouchCount;  // Capture current count
+    
+    // Display send parameter name
+    const paramName = sendParamNames[encoderIndex] || 'Send';
+    displayText(paramName, 0);
+    
+    // Schedule restore after 3 seconds
+    encoderRestoreTask = host.scheduleTask(function() {
+        if (encoderTouchCount === touchCount) {
+            encoderTouchTime = 0;  // Unblock flush
+            restoreActiveTrackDisplay();
+        }
+    }, 3000);
+    
     const track = cursorTrack;
     if (track) {
         const sendBank = track.sendBank();
@@ -580,15 +778,51 @@ function handleSendEncoder(encoderIndex, increment) {
 function handleMuteSoloButton(trackIndex, value) {
     if (value === 0) return;
     
+    // Cancel previous restore task
+    if (encoderRestoreTask) {
+        encoderRestoreTask.cancel();
+    }
+    
+    // Block volume sync for 3 seconds
+    encoderTouchTime = Date.now() + 3000;
+    encoderTouchCount++;
+    const touchCount = encoderTouchCount;
+    
+    const track = trackBank.getItemAt(trackIndex);
+    const trackName = track ? (track.name().get() || 'Track' + (trackIndex + 1)) : 'Track' + (trackIndex + 1);
+    
+    // Get button status
+    let status = buttonMode.toUpperCase();
+    if (track) {
+        switch (buttonMode) {
+            case 'mute':
+                status = track.mute().get() ? 'MUTE ON' : 'MUTE';
+                break;
+            case 'solo':
+                status = track.solo().get() ? 'SOLO ON' : 'SOLO';
+                break;
+            case 'record':
+                status = track.arm().get() ? 'REC ON' : 'REC';
+                break;
+        }
+    }
+    
+    displayText(trackName.substring(0, 10) + ' ' + status, 0);
+    
+    encoderRestoreTask = host.scheduleTask(function() {
+        if (encoderTouchCount === touchCount) {
+            encoderTouchTime = 0;  // Unblock flush
+            restoreActiveTrackDisplay();
+        }
+    }, 3000);
+    
     if (isShiftPressed) {
         // Shift + button = select track
-        const track = trackBank.getItemAt(trackIndex);
         if (track) {
             cursorTrack.selectChannel(track);
         }
     } else {
         // Normal button press: Mute/Solo/Record
-        const track = trackBank.getItemAt(trackIndex);
         if (track) {
             switch (buttonMode) {
                 case 'mute':
@@ -683,6 +917,7 @@ function cycleButtonMode() {
     }
     syncButtonIndicators();
     displayText(buttonMode.toUpperCase(), 0);
+    scheduleDisplayRestore();
 }
 
 /**
@@ -868,10 +1103,79 @@ function init() {
     
     // Create cursor track (8 sends for send encoder mode)
     cursorTrack = host.createCursorTrack('AXIOM_CURSOR', 'Axiom Cursor', WINDOW_SIZE, 0, true);
+    cursorTrack.name().markInterested();
     
     // Create cursor device for parameter control
     cursorDevice = cursorTrack.createCursorDevice('AXIOM_DEVICE', 'Axiom Device', 0, CursorDeviceFollowMode.FIRST_INSTRUMENT);
     remoteControls = cursorDevice.createCursorRemoteControlsPage(WINDOW_SIZE);
+    
+    // Setup observers for device parameter names
+    for (let i = 0; i < WINDOW_SIZE; i++) {
+        const param = remoteControls.getParameter(i);
+        const index = i;
+        
+        // Observe name changes
+        param.name().addValueObserver(function(name) {
+            deviceParamNames[index] = name || '';
+        });
+        
+        // Observe value changes and send to encoder CC (only for active encoder)
+        param.value().addValueObserver(128, function(value) {
+            // Only send if this is the active encoder in device mode
+            if (currentEncoderMode === 'device' && index === activeEncoderIndex) {
+                // Value from Bitwig is already 0-127
+                let midiValue = Math.round(value);
+                if (midiValue < 0) midiValue = 0;
+                if (midiValue > 127) midiValue = 127;
+                midiOutDirectLink.sendMidi(0xBF, CC.ENCODER_1 + index, midiValue);
+            }
+        });
+    }
+    
+    // Setup observers for pan parameter names and values
+    for (let i = 0; i < WINDOW_SIZE; i++) {
+        const track = trackBank.getItemAt(i);
+        const index = i;
+        
+        // Observe pan name changes
+        track.pan().name().addValueObserver(function(name) {
+            panParamNames[index] = name || 'Pan';
+        });
+        
+        // Observe pan value changes and send to encoder CC (only for active encoder in pan mode)
+        track.pan().value().addValueObserver(128, function(value) {
+            if (currentEncoderMode === 'pan' && index === activeEncoderIndex) {
+                let midiValue = Math.round(value);
+                if (midiValue < 0) midiValue = 0;
+                if (midiValue > 127) midiValue = 127;
+                midiOutDirectLink.sendMidi(0xBF, CC.ENCODER_1 + index, midiValue);
+            }
+        });
+    }
+    
+    // Setup observers for send parameter names and values
+    const sendBank = cursorTrack.sendBank();
+    if (sendBank) {
+        for (let i = 0; i < WINDOW_SIZE; i++) {
+            const send = sendBank.getItemAt(i);
+            const index = i;
+            
+            // Observe send name changes
+            send.name().addValueObserver(function(name) {
+                sendParamNames[index] = name || 'Send';
+            });
+            
+            // Observe send value changes and send to encoder CC (only for active encoder in send mode)
+            send.value().addValueObserver(128, function(value) {
+                if (currentEncoderMode === 'send' && index === activeEncoderIndex) {
+                    let midiValue = Math.round(value);
+                    if (midiValue < 0) midiValue = 0;
+                    if (midiValue > 127) midiValue = 127;
+                    midiOutDirectLink.sendMidi(0xBF, CC.ENCODER_1 + index, midiValue);
+                }
+            });
+        }
+    }
     
     // Create master track reference
     masterTrack = host.createMasterTrack(0);
@@ -906,6 +1210,7 @@ function init() {
     encoderModeSetting.addValueObserver(function(value) {
         currentEncoderMode = value.toLowerCase();
         displayText(currentEncoderMode.toUpperCase(), 0);
+        scheduleDisplayRestore();
         println('Encoder mode changed to: ' + currentEncoderMode);
     });
     
@@ -959,6 +1264,11 @@ function exit() {
 let activeTrackIndex = 0;
 
 function flush() {
+    // Skip volume sync if encoder was touched recently (within 3 seconds)
+    if (Date.now() < encoderTouchTime) {
+        return;  // Skip to allow encoder value to be displayed
+    }
+    
     // Sync volume for active track only
     const volume = trackStates[activeTrackIndex].volume;
     if (volume > 0) {
