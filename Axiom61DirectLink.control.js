@@ -745,8 +745,17 @@ function setupObservers() {
         
         track.volume().addValueObserver(128, function(value) {
             trackStates[index].volume = value;
-            setIndicator(CC.FADER_1 + index, value);
+            // Volume sync is handled by flush() to only show active track
         });
+        
+        // Send initial volume value
+        const initialVolume = track.volume().get();
+        if (initialVolume !== undefined) {
+            // Convert 0-1 to MIDI 0-127
+            const midiValue = Math.round(initialVolume * 127);
+            trackStates[index].volume = midiValue;
+            setIndicator(CC.FADER_1 + index, midiValue);
+        }
         
         track.mute().addValueObserver(function(isMuted) {
             trackStates[index].mute = isMuted;
@@ -774,11 +783,17 @@ function setupObservers() {
         });
     }
     
-    // Cursor track observer
+    // Cursor track observers
+    // Show track name when selection changes
     cursorTrack.name().addValueObserver(function(name) {
         if (name && name.length > 0) {
             displayText(name.substring(0, 16), 0);
         }
+    });
+    
+    // Track position observer to know which track is selected
+    cursorTrack.position().addValueObserver(function(pos) {
+        activeTrackIndex = pos;
     });
 }
 
@@ -837,6 +852,16 @@ function init() {
     // Create track bank (8 tracks, 1 send, 8 scenes for clip launching)
     trackBank = host.createMainTrackBank(WINDOW_SIZE, 1, WINDOW_SIZE);
     
+    // Mark track volumes as interested for initial sync
+    for (let i = 0; i < WINDOW_SIZE; i++) {
+        const track = trackBank.getItemAt(i);
+        track.volume().markInterested();
+        track.pan().markInterested();
+        track.mute().markInterested();
+        track.solo().markInterested();
+        track.arm().markInterested();
+    }
+    
     // Create scene bank for clip launching
     sceneBank = host.createSceneBank(WINDOW_SIZE);
     sceneBank.scrollPosition().markInterested();
@@ -850,6 +875,7 @@ function init() {
     
     // Create master track reference
     masterTrack = host.createMasterTrack(0);
+    masterTrack.volume().markInterested();
     
     // Create application reference
     application = host.createApplication();
@@ -929,6 +955,13 @@ function exit() {
     println('M-Audio Axiom 61 DirectLink disabled.');
 }
 
+// Track for active track index
+let activeTrackIndex = 0;
+
 function flush() {
-    // Called periodically to update any pending changes
+    // Sync volume for active track only
+    const volume = trackStates[activeTrackIndex].volume;
+    if (volume > 0) {
+        setIndicator(CC.FADER_1 + activeTrackIndex, volume);
+    }
 }

@@ -7,6 +7,3 @@
 !README_RU.md
 !README_EN.md
 !LICENSE
-
-# Allow .gitignore itself
-!.gitignore
