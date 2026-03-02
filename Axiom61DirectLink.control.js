@@ -828,6 +828,8 @@ function init() {
     
     // Create transport
     transport = host.createTransport();
+    // Mark position as interested to enable .get() calls
+    transport.getPosition().markInterested();
     
     // Create track bank (8 tracks, 1 send, 8 scenes for clip launching)
     trackBank = host.createMainTrackBank(WINDOW_SIZE, 1, WINDOW_SIZE);
