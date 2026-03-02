@@ -142,6 +142,9 @@ let sceneBank = null;
 let buttonModeSetting = null;
 let buttonMode = 'mute';  // 'mute', 'solo', 'record'
 
+// Encoder mode settings
+let encoderModeSetting = null;
+
 // ============================================
 // DirectLink Protocol Implementation
 // ============================================
@@ -864,6 +867,20 @@ function init() {
         buttonMode = value.toLowerCase();
         syncButtonIndicators();
         println('Button mode changed to: ' + buttonMode);
+    });
+    
+    // Setup preferences for encoder mode
+    const encoderModeSetting = preferences.getEnumSetting(
+        'Encoder Mode',
+        'Encoder Functions',
+        ['Pan', 'Device', 'Send'],
+        'Pan'
+    );
+    
+    encoderModeSetting.addValueObserver(function(value) {
+        currentEncoderMode = value.toLowerCase();
+        displayText(currentEncoderMode.toUpperCase(), 0);
+        println('Encoder mode changed to: ' + currentEncoderMode);
     });
     
     // Set up MIDI input callbacks for both ports
