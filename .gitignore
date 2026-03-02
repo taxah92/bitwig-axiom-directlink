@@ -1,9 +1,0 @@
-# Ignore everything
-*
-
-# Except these files
-!Axiom61DirectLink.control.js
-!README.md
-!README_RU.md
-!README_EN.md
-!LICENSE
