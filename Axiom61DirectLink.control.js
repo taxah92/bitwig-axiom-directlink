@@ -137,6 +137,7 @@ let preferences = null;
 let isShiftPressed = false;
 let currentEncoderMode = 'pan';  // 'pan', 'device', 'send'
 let sceneBank = null;
+let activeTrackIndex = 0;
 
 // Device parameter names for display
 const deviceParamNames = [];
@@ -287,9 +288,6 @@ function turnOffAllIndicators() {
 function onMidi(status, data1, data2) {
     const channel = status & 0x0F;
     const message = status & 0xF0;
-    
-    // Debug: log all MIDI messages to see what's coming through
-    println('Standard MIDI: status=' + status.toString(16) + ' ch=' + channel + ' data1=' + data1 + ' data2=' + data2);
     
     // Note: Keys and pads are handled by NoteInput automatically
     // This callback is for other MIDI messages if needed
@@ -558,6 +556,30 @@ function handleFader(trackIndex, value) {
 function handleMasterFader(value) {
     if (masterTrack) {
         masterTrack.volume().set(value, 128);
+        
+        // Update indicator immediately
+        setIndicator(CC.FADER_MASTER, value);
+        
+        // Cancel previous restore task
+        if (encoderRestoreTask) {
+            encoderRestoreTask.cancel();
+        }
+        
+        // Block volume sync for 3 seconds
+        encoderTouchTime = Date.now() + 3000;
+        encoderTouchCount++;
+        const touchCount = encoderTouchCount;
+        
+        // Show name on display
+        displayText('Master', 0);
+        
+        // Schedule restore after 3 seconds
+        encoderRestoreTask = host.scheduleTask(function() {
+            if (encoderTouchCount === touchCount) {
+                encoderTouchTime = 0;  // Unblock flush
+                restoreActiveTrackDisplay();
+            }
+        }, 3000);
     }
 }
 
@@ -978,12 +1000,10 @@ function setupObservers() {
         const track = trackBank.getItemAt(i);
         const index = i;
         
-        track.volume().addValueObserver(128, function(value) {
-            trackStates[index].volume = value;
-            // Volume sync is handled by flush() to only show active track
-        });
+        // 1. Mark as interested FIRST
+        track.volume().markInterested();
         
-        // Send initial volume value
+        // 2. Get initial volume value immediately
         const initialVolume = track.volume().get();
         if (initialVolume !== undefined) {
             // Convert 0-1 to MIDI 0-127
@@ -991,6 +1011,12 @@ function setupObservers() {
             trackStates[index].volume = midiValue;
             setIndicator(CC.FADER_1 + index, midiValue);
         }
+        
+        // 3. Add observer AFTER initial sync
+        track.volume().addValueObserver(128, function(value) {
+            trackStates[index].volume = value;
+            // Volume sync is handled by flush() to only show active track
+        });
         
         track.mute().addValueObserver(function(isMuted) {
             trackStates[index].mute = isMuted;
@@ -1029,6 +1055,27 @@ function setupObservers() {
     // Track position observer to know which track is selected
     cursorTrack.position().addValueObserver(function(pos) {
         activeTrackIndex = pos;
+        
+        // Get initial volume value when track changes (for Master/FX tracks)
+        // This ensures we show volume even if observer doesn't fire initially
+        const initialVol = cursorTrack.volume().get();
+        const midiValue = Math.round(initialVol * 127);
+        if (initialVol !== undefined) {
+            // Write to trackStates for flush() to read
+            if (activeTrackIndex >= 0 && activeTrackIndex < WINDOW_SIZE) {
+                trackStates[activeTrackIndex].volume = midiValue;
+            }
+            setIndicator(CC.FADER_MASTER, midiValue);
+        }
+    });
+    
+    // Cursor track volume observer - shows volume for any selected track (including Master/FX)
+    cursorTrack.volume().addValueObserver(128, function(value) {
+        // Write to trackStates for flush() to read
+        if (activeTrackIndex >= 0 && activeTrackIndex < WINDOW_SIZE) {
+            trackStates[activeTrackIndex].volume = value;
+        }
+        setIndicator(CC.FADER_MASTER, value);
     });
 }
 
@@ -1104,6 +1151,7 @@ function init() {
     // Create cursor track (8 sends for send encoder mode)
     cursorTrack = host.createCursorTrack('AXIOM_CURSOR', 'Axiom Cursor', WINDOW_SIZE, 0, true);
     cursorTrack.name().markInterested();
+    cursorTrack.volume().markInterested();
     
     // Create cursor device for parameter control
     cursorDevice = cursorTrack.createCursorDevice('AXIOM_DEVICE', 'Axiom Device', 0, CursorDeviceFollowMode.FIRST_INSTRUMENT);
@@ -1180,6 +1228,12 @@ function init() {
     // Create master track reference
     masterTrack = host.createMasterTrack(0);
     masterTrack.volume().markInterested();
+    
+    // Get initial master volume value
+    const initialMasterVolume = masterTrack.volume().get();
+    if (initialMasterVolume !== undefined) {
+        setIndicator(CC.FADER_MASTER, initialMasterVolume);
+    }
     
     // Create application reference
     application = host.createApplication();
@@ -1260,18 +1314,15 @@ function exit() {
     println('M-Audio Axiom 61 DirectLink disabled.');
 }
 
-// Track for active track index
-let activeTrackIndex = 0;
-
 function flush() {
     // Skip volume sync if encoder was touched recently (within 3 seconds)
     if (Date.now() < encoderTouchTime) {
         return;  // Skip to allow encoder value to be displayed
     }
     
-    // Sync volume for active track only
+    // Sync volume
     const volume = trackStates[activeTrackIndex].volume;
-    if (volume > 0) {
-        setIndicator(CC.FADER_1 + activeTrackIndex, volume);
-    }
+    setIndicator(CC.FADER_1 + activeTrackIndex, volume);
 }
+
+
