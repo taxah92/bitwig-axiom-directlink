@@ -10,8 +10,8 @@
  * Based on DirectLink protocol documentation and Ableton Live scripts
  */
 
-// Load Bitwig API version 6
-loadAPI(6);
+// Load Bitwig API version 7
+loadAPI(7);
 
 // Define controller metadata
 host.defineController('M-Audio', 'Axiom 61 DirectLink', '1.0.0', 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'Axiom61DirectLink');
@@ -90,7 +90,8 @@ const CC = {
     MUTE_SOLO_FLIP: 57,
     PEEK: 78,
     DISPLAY_ON: 79,
-    INST: 109
+    INST: 109,
+    PANIC: 121
 };
 
 const NOTE = {
@@ -296,6 +297,11 @@ function onMidi(status, data1, data2) {
     // Channel Aftertouch
     else if (message === 0xD0) {
         controllerTouchTime = Date.now();
+    }
+    
+    // PANIC button
+    if (message === 0xB0 && data1 === PANIC && data2 === 0) {
+        handlePanic();
     }
     
     // Note: Keys and pads are handled by NoteInput automatically
@@ -1336,6 +1342,16 @@ function init() {
     println('');
     println('Preferences: Settings > Controllers > Axiom 61 DirectLink');
     println('========================================\n');
+}
+
+function handlePanic() {
+    println('PANIC pressed - restarting controller...');
+    displayText('PANIC', 0);
+    
+    // Using host.restart() - requires API 7+
+    host.scheduleTask(function() {
+        host.restart();
+    }, 100);
 }
 
 function exit() {
