@@ -158,10 +158,10 @@ for (let i = 0; i < WINDOW_SIZE; i++) {
 }
 let activeEncoderIndex = 0;
 
-// Flag to block volume sync while using encoder
-let encoderTouchTime = 0;
+// Flag to block volume sync while using controller (encoder, fader, pitch, modwheel, aftertouch)
+let controllerTouchTime = 0;
 let encoderRestoreTask = null;
-let encoderTouchCount = 0;
+let controllerTouchCount = 0;
 
 // Button mode settings
 let buttonModeSetting = null;
@@ -288,6 +288,20 @@ function turnOffAllIndicators() {
 function onMidi(status, data1, data2) {
     const channel = status & 0x0F;
     const message = status & 0xF0;
+    
+    // Block volume sync when using pitch/modulation/aftertouch (controller wants to display info)
+    // Pitch Bend
+    if (message === 0xE0) {
+        controllerTouchTime = Date.now();
+    }
+    // Modulation Wheel (CC 1)
+    else if (message === 0xB0 && data1 === 1) {
+        controllerTouchTime = Date.now();
+    }
+    // Channel Aftertouch
+    else if (message === 0xD0) {
+        controllerTouchTime = Date.now();
+    }
     
     // Note: Keys and pads are handled by NoteInput automatically
     // This callback is for other MIDI messages if needed
@@ -531,10 +545,10 @@ function handleFader(trackIndex, value) {
             encoderRestoreTask.cancel();
         }
         
-        // Block volume sync for 3 seconds to show track name on DISPLAY
-        encoderTouchTime = Date.now() + 3000;
-        encoderTouchCount++;
-        const touchCount = encoderTouchCount;
+        // Block volume sync to show track name on DISPLAY
+        controllerTouchTime = Date.now();
+        controllerTouchCount++;
+        const touchCount = controllerTouchCount;
         
         // Get track name
         const name = track.name().get();
@@ -542,8 +556,7 @@ function handleFader(trackIndex, value) {
         displayText(displayName + ' ' + Math.round(value), 0);
         
         encoderRestoreTask = host.scheduleTask(function() {
-            if (encoderTouchCount === touchCount) {
-                encoderTouchTime = 0;  // Unblock flush
+            if (controllerTouchCount === touchCount) {
                 restoreActiveTrackDisplay();
             }
         }, 3000);
@@ -565,18 +578,17 @@ function handleMasterFader(value) {
             encoderRestoreTask.cancel();
         }
         
-        // Block volume sync for 3 seconds
-        encoderTouchTime = Date.now() + 3000;
-        encoderTouchCount++;
-        const touchCount = encoderTouchCount;
+        // Block volume sync
+        controllerTouchTime = Date.now();
+        controllerTouchCount++;
+        const touchCount = controllerTouchCount;
         
         // Show name on display
         displayText('Master', 0);
         
         // Schedule restore after 3 seconds
         encoderRestoreTask = host.scheduleTask(function() {
-            if (encoderTouchCount === touchCount) {
-                encoderTouchTime = 0;  // Unblock flush
+            if (controllerTouchCount === touchCount) {
                 restoreActiveTrackDisplay();
             }
         }, 3000);
@@ -621,10 +633,10 @@ function showTrackVolume(trackIndex) {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
-    encoderTouchCount++;
-    const touchCount = encoderTouchCount;
+    // Block volume sync
+    controllerTouchTime = Date.now();
+    controllerTouchCount++;
+    const touchCount = controllerTouchCount;
     
     // Get track name and volume
     const track = trackBank.getItemAt(trackIndex);
@@ -640,8 +652,7 @@ function showTrackVolume(trackIndex) {
         
         // Schedule restore after 3 seconds
         encoderRestoreTask = host.scheduleTask(function() {
-            if (encoderTouchCount === touchCount) {
-                encoderTouchTime = 0;  // Unblock flush
+            if (controllerTouchCount === touchCount) {
                 restoreActiveTrackDisplay();
             }
         }, 3000);
@@ -668,15 +679,14 @@ function scheduleDisplayRestore() {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
-    encoderTouchCount++;
-    const touchCount = encoderTouchCount;
+    // Block volume sync
+    controllerTouchTime = Date.now();
+    controllerTouchCount++;
+    const touchCount = controllerTouchCount;
     
     // Schedule restore after 3 seconds
     encoderRestoreTask = host.scheduleTask(function() {
-        if (encoderTouchCount === touchCount) {
-            encoderTouchTime = 0;  // Unblock flush
+        if (controllerTouchCount === touchCount) {
             restoreActiveTrackDisplay();
         }
     }, 3000);
@@ -691,11 +701,11 @@ function handlePanEncoder(encoderIndex, increment) {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
-    encoderTouchCount++;
+    // Block volume sync
+    controllerTouchTime = Date.now();
+    controllerTouchCount++;
     
-    const touchCount = encoderTouchCount;  // Capture current count
+    const touchCount = controllerTouchCount;  // Capture current count
     
     // Display pan parameter name
     const paramName = panParamNames[encoderIndex] || 'Pan';
@@ -703,8 +713,7 @@ function handlePanEncoder(encoderIndex, increment) {
     
     // Schedule restore after 3 seconds
     encoderRestoreTask = host.scheduleTask(function() {
-        if (encoderTouchCount === touchCount) {
-            encoderTouchTime = 0;  // Unblock flush
+        if (controllerTouchCount === touchCount) {
             restoreActiveTrackDisplay();
         }
     }, 3000);
@@ -725,17 +734,16 @@ function handleDeviceEncoder(encoderIndex, increment) {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
+    // Block volume sync
+    controllerTouchTime = Date.now();
     activeEncoderIndex = encoderIndex;
-    encoderTouchCount++;
+    controllerTouchCount++;
     
-    const touchCount = encoderTouchCount;  // Capture current count
+    const touchCount = controllerTouchCount;  // Capture current count
     
     // Schedule restore after 3 seconds
     encoderRestoreTask = host.scheduleTask(function() {
-        if (encoderTouchCount === touchCount) {
-            encoderTouchTime = 0;  // Unblock flush
+        if (controllerTouchCount === touchCount) {
             restoreActiveTrackDisplay();
         }
     }, 3000);
@@ -762,12 +770,12 @@ function handleSendEncoder(encoderIndex, increment) {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
+    // Block volume sync
+    controllerTouchTime = Date.now();
     activeEncoderIndex = encoderIndex;
-    encoderTouchCount++;
+    controllerTouchCount++;
     
-    const touchCount = encoderTouchCount;  // Capture current count
+    const touchCount = controllerTouchCount;  // Capture current count
     
     // Display send parameter name
     const paramName = sendParamNames[encoderIndex] || 'Send';
@@ -775,8 +783,7 @@ function handleSendEncoder(encoderIndex, increment) {
     
     // Schedule restore after 3 seconds
     encoderRestoreTask = host.scheduleTask(function() {
-        if (encoderTouchCount === touchCount) {
-            encoderTouchTime = 0;  // Unblock flush
+        if (controllerTouchCount === touchCount) {
             restoreActiveTrackDisplay();
         }
     }, 3000);
@@ -805,10 +812,10 @@ function handleMuteSoloButton(trackIndex, value) {
         encoderRestoreTask.cancel();
     }
     
-    // Block volume sync for 3 seconds
-    encoderTouchTime = Date.now() + 3000;
-    encoderTouchCount++;
-    const touchCount = encoderTouchCount;
+    // Block volume sync
+    controllerTouchTime = Date.now();
+    controllerTouchCount++;
+    const touchCount = controllerTouchCount;
     
     const track = trackBank.getItemAt(trackIndex);
     const trackName = track ? (track.name().get() || 'Track' + (trackIndex + 1)) : 'Track' + (trackIndex + 1);
@@ -832,8 +839,7 @@ function handleMuteSoloButton(trackIndex, value) {
     displayText(trackName.substring(0, 10) + ' ' + status, 0);
     
     encoderRestoreTask = host.scheduleTask(function() {
-        if (encoderTouchCount === touchCount) {
-            encoderTouchTime = 0;  // Unblock flush
+        if (controllerTouchCount === touchCount) {
             restoreActiveTrackDisplay();
         }
     }, 3000);
@@ -1315,14 +1321,12 @@ function exit() {
 }
 
 function flush() {
-    // Skip volume sync if encoder was touched recently (within 3 seconds)
-    if (Date.now() < encoderTouchTime) {
-        return;  // Skip to allow encoder value to be displayed
+    // Skip volume sync if controller was touched recently (within 3 seconds)
+    if (Date.now() < controllerTouchTime + 3000) {
+        return;  // Skip to allow controller display to show info
     }
     
     // Sync volume
     const volume = trackStates[activeTrackIndex].volume;
     setIndicator(CC.FADER_1 + activeTrackIndex, volume);
 }
-
-
