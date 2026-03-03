@@ -300,7 +300,7 @@ function onMidi(status, data1, data2) {
     }
     
     // PANIC button
-    if (message === 0xB0 && data1 === PANIC && data2 === 0) {
+    if (message === 0xB0 && data1 === CC.PANIC && data2 === 0) {
         handlePanic();
     }
     
