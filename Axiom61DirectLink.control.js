@@ -38,11 +38,6 @@ const SYSEX = {
     DISPLAY_TEXT: 0x11
 };
 
-const MIDI_CHANNEL = {
-    STANDARD: 0,      // Channel 1 (0-indexed)
-    INDICATORS: 15    // Channel 16 for indicators (0-indexed)
-};
-
 const CC = {
     // Faders (Channel 16 for indicators)
     FADER_1: 33,
@@ -321,8 +316,8 @@ function onDirectLinkMidi(status, data1, data2) {
     if (message === 0xB0) {  // Control Change
         handleControlChange(data1, data2);
     } 
-    // Note On/Off on channel 16 (0x9F/0x8F) - pads in DirectLink mode (Group P ON)
-    else if (status === 0x9F && data2 > 0) {  // Note On on channel 16
+    // Note On/Off on channel 10 (0x9F/0x8F) - pads in DirectLink mode (Group P ON)
+    else if (status === 0x9F && data2 > 0) {  // Note On on channel 10
         handleDirectLinkPad(data1, data2);
     }
 }
@@ -1105,19 +1100,48 @@ function init() {
     // Filter masks:
     // 80???? = Note Off on channel 1
     // 90???? = Note On on channel 1
-    // A0???? = Polyphonic Aftertouch on channel 1
     // B0???? = Control Change on channel 1 (for modulation wheel CC 1)
     // D0???? = Channel Aftertouch on channel 1
     // E0???? = Pitch Bend on channel 1
-    const keyNoteInput = midiIn.createNoteInput('Axiom 61 Keys', 
+    const keyNoteInputZ1 = midiIn.createNoteInput('Zone 1', 
         '80????',  // Note Off on channel 1
         '90????',  // Note On on channel 1
-        'A0????',  // Polyphonic Aftertouch on channel 1
         'B0????',  // Control Change on channel 1 (modulation wheel)
         'D0????',  // Channel Aftertouch on channel 1
         'E0????'   // Pitch Bend on channel 1
     );
-    keyNoteInput.setShouldConsumeEvents(false);
+
+    keyNoteInputZ1.setShouldConsumeEvents(false);
+
+    const keyNoteInputZ2 = midiIn.createNoteInput('Zone 2', 
+        '81????',  // Note Off on channel 2
+        '91????',  // Note On on channel 2
+        'B1????',  // Control Change on channel 2 (modulation wheel)
+        'D1????',  // Channel Aftertouch on channel 2
+        'E1????'   // Pitch Bend on channel 2
+    );
+
+    keyNoteInputZ2.setShouldConsumeEvents(false);
+
+    const keyNoteInputZ3 = midiIn.createNoteInput('Zone 3', 
+        '82????',  // Note Off on channel 3
+        '92????',  // Note On on channel 3
+        'B2????',  // Control Change on channel 3 (modulation wheel)
+        'D2????',  // Channel Aftertouch on channel 3
+        'E2????'   // Pitch Bend on channel 3
+    );
+
+    keyNoteInputZ3.setShouldConsumeEvents(false);
+
+    const keyNoteInputZ4 = midiIn.createNoteInput('Zone 4', 
+        '83????',  // Note Off on channel 4
+        '93????',  // Note On on channel 4
+        'B3????',  // Control Change on channel 4 (modulation wheel)
+        'D3????',  // Channel Aftertouch on channel 4
+        'E3????'   // Pitch Bend on channel 4
+    );
+
+    keyNoteInputZ4.setShouldConsumeEvents(false);
     
     // Note input for drum pads
     // Pads send on channel 10 (0x99 for Note On, 0x89 for Note Off) when Group P is OFF
@@ -1126,7 +1150,7 @@ function init() {
     // We only create NoteInput on standard port for note playing
     // DirectLink port pads are handled in onDirectLinkMidi for DAW control
     
-    const padNoteInput = midiIn.createNoteInput('Axiom 61 Pads',
+    const padNoteInput = midiIn.createNoteInput('Pads',
         '89????',  // Note Off on channel 10
         '99????'   // Note On on channel 10
     );
